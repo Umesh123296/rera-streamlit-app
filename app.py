@@ -1,13 +1,14 @@
 import streamlit as st
 import pandas as pd
 
-# Session state initialization
-if "df" not in st.session_state:
-    st.session_state.df = None
-    st.session_state.filtered_df = None
-    st.session_state.index = 0
+st.set_page_config(page_title="RERA Viewer", layout="wide")
 
-st.title("🏗️ RERA CSV Viewer with Dynamic Filters")
+# Initialize session state
+for key in ["df", "filtered_df", "index", "search_rera", "selected_status", "selected_state", "selected_district"]:
+    if key not in st.session_state:
+        st.session_state[key] = None if key in ["df", "filtered_df"] else 0 if key == "index" else ""
+
+st.title("🏗️ RERA Data Viewer")
 
 # Upload CSV
 uploaded_file = st.file_uploader("Upload your RERA CSV file", type=["csv"])
@@ -16,82 +17,71 @@ if uploaded_file is not None:
     st.session_state.filtered_df = st.session_state.df.copy()
     st.session_state.index = 0
 
-# Display filters and data if a CSV has been uploaded
+# Define filter function
+def apply_filters():
+    df = st.session_state.df.copy()
+    if st.session_state.search_rera:
+        df = df[df['reraNo'].astype(str).str.contains(st.session_state.search_rera, case=False, na=False)]
+    if st.session_state.selected_status:
+        df = df[df['projectStatus'] == st.session_state.selected_status]
+    if st.session_state.selected_state:
+        df = df[df['state'] == st.session_state.selected_state]
+    if st.session_state.selected_district:
+        df = df[df['district'] == st.session_state.selected_district]
+
+    st.session_state.filtered_df = df
+    st.session_state.index = 0
+
+# Only show filters and data if CSV is loaded
 if st.session_state.df is not None:
     df = st.session_state.df
-    filtered_df = st.session_state.filtered_df
 
     with st.sidebar:
         st.header("🔍 Filter Options")
 
-        search_rera = st.text_input("Search by RERA No")
+        st.session_state.search_rera = st.text_input("Search RERA No", value=st.session_state.search_rera)
 
-        selected_status = st.selectbox(
-            "Select Project Status",
-            options=[""] + sorted(df['projectStatus'].dropna().unique().tolist())
-            if 'projectStatus' in df.columns else [],
-            key="status"
-        )
+        if 'projectStatus' in df.columns:
+            options = [""] + sorted(df['projectStatus'].dropna().astype(str).unique())
+            st.session_state.selected_status = st.selectbox("Project Status", options, index=options.index(st.session_state.selected_status) if st.session_state.selected_status in options else 0)
 
-        selected_state = st.selectbox(
-            "Select State",
-            options=[""] + sorted(df['state'].dropna().unique().tolist())
-            if 'state' in df.columns else [],
-            key="state"
-        )
+        if 'state' in df.columns:
+            options = [""] + sorted(df['state'].dropna().astype(str).unique())
+            st.session_state.selected_state = st.selectbox("State", options, index=options.index(st.session_state.selected_state) if st.session_state.selected_state in options else 0)
 
-        selected_district = st.selectbox(
-            "Select District",
-            options=[""] + sorted(df['district'].dropna().unique().tolist())
-            if 'district' in df.columns else [],
-            key="district"
-        )
+        if 'district' in df.columns:
+            options = [""] + sorted(df['district'].dropna().astype(str).unique())
+            st.session_state.selected_district = st.selectbox("District", options, index=options.index(st.session_state.selected_district) if st.session_state.selected_district in options else 0)
 
-        def apply_filters():
-            fdf = df.copy()
+        if st.button("Apply Filter"):
+            apply_filters()
 
-            if search_rera:
-                fdf = fdf[fdf['reraNo'].astype(str).str.contains(search_rera, case=False, na=False)]
-
-            if selected_status:
-                fdf = fdf[fdf['projectStatus'] == selected_status]
-
-            if selected_state:
-                fdf = fdf[fdf['state'] == selected_state]
-
-            if selected_district:
-                fdf = fdf[fdf['district'] == selected_district]
-
-            st.session_state.filtered_df = fdf
-            st.session_state.index = 0
-
-        def clear_filters():
-            st.session_state.status = ""
-            st.session_state.state = ""
-            st.session_state.district = ""
+        if st.button("Clear Filters"):
+            st.session_state.search_rera = ""
+            st.session_state.selected_status = ""
+            st.session_state.selected_state = ""
+            st.session_state.selected_district = ""
             st.session_state.filtered_df = df.copy()
             st.session_state.index = 0
 
-        st.button("Apply Filter", on_click=apply_filters)
-        st.button("Clear Filters", on_click=clear_filters)
-
-    # Record viewer
-    if not st.session_state.filtered_df.empty:
+    # View records
+    if st.session_state.filtered_df is not None and not st.session_state.filtered_df.empty:
         record = st.session_state.filtered_df.iloc[st.session_state.index]
-        st.subheader(f"📄 Record {st.session_state.index + 1} of {len(st.session_state.filtered_df)}")
 
+        st.subheader(f"📄 Record {st.session_state.index + 1} of {len(st.session_state.filtered_df)}")
         for col, val in record.items():
             st.markdown(f"**{col}**: {val}")
 
-        # Navigation
         col1, col2 = st.columns([1, 1])
         with col1:
-            if st.button("⬅️ Previous", disabled=st.session_state.index <= 0):
+            if st.button("⬅️ Previous") and st.session_state.index > 0:
                 st.session_state.index -= 1
+                st.experimental_rerun()
         with col2:
-            if st.button("➡️ Next", disabled=st.session_state.index >= len(st.session_state.filtered_df) - 1):
+            if st.button("➡️ Next") and st.session_state.index < len(st.session_state.filtered_df) - 1:
                 st.session_state.index += 1
+                st.experimental_rerun()
     else:
-        st.warning("No records found for current filters.")
+        st.warning("No records found with current filters.")
 else:
-    st.info("📤 Please upload a CSV file to begin.")
+    st.info("📤 Please upload a CSV file to get started.")
